@@ -57,7 +57,7 @@ def main(args):
                              val_check_interval=1.0 if hparams.epochs > 4 else 0.1,
                              accumulate_grad_batches=hparams.accumulate_grad_batches,
                              limit_train_batches=50 if hparams.test_run else 1.0
-                             )
+                            )
     else:
         # pytorch lightning before 1.4.4
         trainer = pl.Trainer(resume_from_checkpoint=resume_from_checkpoint,

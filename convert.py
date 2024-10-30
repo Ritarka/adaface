@@ -82,6 +82,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     rec_path = Path(args.rec_path)
+    assert rec_path.exists()
     if args.make_image_files:
         # unfolds train.rec to image folders
         save_rec_to_img_dir(rec_path, swap_color_channel=args.swap_color_channel)
@@ -93,5 +94,6 @@ if __name__ == '__main__':
         bin_files = [i.split('.')[0] for i in bin_files]
 
         for i in range(len(bin_files)):
+            print(rec_path/(bin_files[i]+'.bin'))
             load_bin(rec_path/(bin_files[i]+'.bin'), rec_path/bin_files[i])
 

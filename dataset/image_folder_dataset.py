@@ -1,5 +1,6 @@
 import os
 
+import torch
 import torchvision.datasets as datasets
 from PIL import Image
 import numpy as np
@@ -21,7 +22,7 @@ class CustomImageFolderDataset(datasets.ImageFolder):
                  swap_color_channel=False,
                  output_dir='./',
                  ):
-
+        
         super(CustomImageFolderDataset, self).__init__(root,
                                                        transform=transform,
                                                        target_transform=target_transform,
@@ -60,6 +61,6 @@ class CustomImageFolderDataset(datasets.ImageFolder):
             sample = self.transform(sample)
         if self.target_transform is not None:
             target = self.target_transform(target)
-
+            
         return sample, target
 

@@ -1,10 +1,12 @@
 import os
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader
+import torchvision
 from torchvision import transforms
 import numpy as np
 import pandas as pd
 import evaluate_utils
+from dataset.index_dataset import IndexedDatasetWrapper
 from dataset.image_folder_dataset import CustomImageFolderDataset
 from dataset.five_validation_dataset import FiveValidationDataset
 from dataset.record_dataset import AugmentRecordDataset
@@ -33,21 +35,23 @@ class DataModule(pl.LightningDataModule):
 
 
     def prepare_data(self):
+        pass
         # call this once to convert val_data to memfile for saving memory
-        if not os.path.isdir(os.path.join(self.data_root, self.val_data_path, 'agedb_30', 'memfile')):
-            print('making validation data memfile')
-            evaluate_utils.get_val_data(os.path.join(self.data_root, self.val_data_path))
+        # print(os.path.join(self.data_root, self.val_data_path, 'agedb_30', 'memfile'))
+        # # if not os.path.isdir(os.path.join(self.data_root, self.val_data_path, 'agedb_30', 'memfile')):
+        # print('making validation data memfile')
+        # evaluate_utils.get_val_data(os.path.join(self.data_root, self.val_data_path))
 
-        if not os.path.isfile(self.concat_mem_file_name):
-            # create a concat memfile
-            concat = []
-            for key in ['agedb_30', 'cfp_fp', 'lfw', 'cplfw', 'calfw']:
-                np_array, issame = evaluate_utils.get_val_pair(path=os.path.join(self.data_root, self.val_data_path),
-                                                               name=key,
-                                                               use_memfile=False)
-                concat.append(np_array)
-            concat = np.concatenate(concat)
-            evaluate_utils.make_memmap(self.concat_mem_file_name, concat)
+        # if not os.path.isfile(self.concat_mem_file_name):
+        #     # create a concat memfile
+        #     concat = []
+        #     for key in ['agedb_30', 'cfp_fp', 'lfw', 'cplfw', 'calfw']:
+        #         np_array, issame = evaluate_utils.get_val_pair(path=os.path.join(self.data_root, self.val_data_path),
+        #                                                        name=key,
+        #                                                        use_memfile=False)
+        #         concat.append(np_array)
+        #     concat = np.concatenate(concat)
+        #     evaluate_utils.make_memmap(self.concat_mem_file_name, concat)
 
 
     def setup(self, stage=None):
@@ -129,7 +133,8 @@ def train_dataset(data_root, train_data_path,
     train_transform = transforms.Compose([
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
-        transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
+        transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
+        transforms.Resize((112, 112))
     ])
 
     if use_mxrecord:
@@ -142,47 +147,71 @@ def train_dataset(data_root, train_data_path,
                                              swap_color_channel=swap_color_channel,
                                              output_dir=output_dir)
     else:
-        train_dir = os.path.join(data_root, train_data_path, 'imgs')
-        train_dataset = CustomImageFolderDataset(root=train_dir,
-                                                 transform=train_transform,
-                                                 low_res_augmentation_prob=low_res_augmentation_prob,
-                                                 crop_augmentation_prob=crop_augmentation_prob,
-                                                 photometric_augmentation_prob=photometric_augmentation_prob,
-                                                 swap_color_channel=swap_color_channel,
-                                                 output_dir=output_dir
-                                                 )
+        print("Train data path")
+        if train_data_path == "mnist":
+            train_dataset = torchvision.datasets.MNIST(
+                root="./data", train=True, download=True, transform=train_transform
+            )
+        elif train_data_path == "cifar100":
+            train_dataset = torchvision.datasets.CIFAR100(
+                root="./data", train=True, download=True, transform=train_transform)
+        else:
+            train_dir = os.path.join(data_root, train_data_path, 'images')
+            train_dataset = CustomImageFolderDataset(root=train_dir,
+                                                    transform=train_transform,
+                                                    low_res_augmentation_prob=low_res_augmentation_prob,
+                                                    crop_augmentation_prob=crop_augmentation_prob,
+                                                    photometric_augmentation_prob=photometric_augmentation_prob,
+                                                    swap_color_channel=swap_color_channel,
+                                                    output_dir=output_dir
+                                                    )
+            
+    train_dataset = IndexedDatasetWrapper(train_dataset)
 
     return train_dataset
 
 
 def val_dataset(data_root, val_data_path, concat_mem_file_name):
-    val_data = evaluate_utils.get_val_data(os.path.join(data_root, val_data_path))
-    # theses datasets are already normalized with mean 0.5, std 0.5
-    age_30, cfp_fp, lfw, age_30_issame, cfp_fp_issame, lfw_issame, cplfw, cplfw_issame, calfw, calfw_issame = val_data
-    val_data_dict = {
-        'agedb_30': (age_30, age_30_issame),
-        "cfp_fp": (cfp_fp, cfp_fp_issame),
-        "lfw": (lfw, lfw_issame),
-        "cplfw": (cplfw, cplfw_issame),
-        "calfw": (calfw, calfw_issame),
-    }
-    val_dataset = FiveValidationDataset(val_data_dict, concat_mem_file_name)
+    val_transform = transforms.Compose([
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
+        transforms.Resize((112, 112))
+    ])
+    # print("Coming in here")
+    if val_data_path == "mnist":
+        val_dataset = torchvision.datasets.MNIST(
+            root="./data", train=False, download=True, transform=val_transform)
+    elif val_data_path == "cifar100":
+        val_dataset = torchvision.datasets.CIFAR100(
+            root="./data", train=False, download=True, transform=val_transform)
+    else:
+        train_dir = os.path.join(data_root, val_data_path, 'images')
+        val_dataset = CustomImageFolderDataset(root=train_dir,
+                                                transform=val_transform)
+        
+    val_dataset = IndexedDatasetWrapper(val_dataset)
 
     return val_dataset
 
 
 def test_dataset(data_root, val_data_path, concat_mem_file_name):
-    val_data = evaluate_utils.get_val_data(os.path.join(data_root, val_data_path))
-    # theses datasets are already normalized with mean 0.5, std 0.5
-    age_30, cfp_fp, lfw, age_30_issame, cfp_fp_issame, lfw_issame, cplfw, cplfw_issame, calfw, calfw_issame = val_data
-    val_data_dict = {
-        'agedb_30': (age_30, age_30_issame),
-        "cfp_fp": (cfp_fp, cfp_fp_issame),
-        "lfw": (lfw, lfw_issame),
-        "cplfw": (cplfw, cplfw_issame),
-        "calfw": (calfw, calfw_issame),
-    }
-    val_dataset = FiveValidationDataset(val_data_dict, concat_mem_file_name)
+    
+    test_transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Resize((112, 112))
+    ])
+
+    if val_data_path == "mnist":
+        val_dataset = torchvision.datasets.MNIST(
+            root="./data", train=False, download=True, transform=test_transform)
+    elif val_data_path == "cifar100":
+        val_dataset = torchvision.datasets.CIFAR100(
+            root="./data", train=False, download=True, transform=test_transform)
+    else:
+        train_dir = os.path.join(data_root, val_data_path, 'images')
+        val_dataset = CustomImageFolderDataset(root=train_dir, transform=test_transform)
+        
+    val_dataset = IndexedDatasetWrapper(val_dataset)
+
     return val_dataset
-
-

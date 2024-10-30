@@ -22,7 +22,7 @@ def load_pretrained_model(architecture='ir_50'):
 def to_input(pil_rgb_image):
     np_img = np.array(pil_rgb_image)
     brg_img = ((np_img[:,:,::-1] / 255.) - 0.5) / 0.5
-    tensor = torch.tensor([brg_img.transpose(2,0,1)]).float()
+    tensor = torch.tensor(np.array([brg_img.transpose(2,0,1)])).float()
     return tensor
 
 if __name__ == '__main__':
@@ -38,6 +38,9 @@ if __name__ == '__main__':
         bgr_tensor_input = to_input(aligned_rgb_img)
         feature, _ = model(bgr_tensor_input)
         features.append(feature)
+        
+    print(len(features))
+    print(features[0].shape)
 
     similarity_scores = torch.cat(features) @ torch.cat(features).T
     print(similarity_scores)

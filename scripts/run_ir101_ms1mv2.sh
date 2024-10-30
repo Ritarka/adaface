@@ -1,15 +1,14 @@
 
 python main.py \
-    --data_root /mnt/home/kimminc2/data \
-    --train_data_path faces_emore \
-    --val_data_path faces_emore \
+    --data_root /home/biometrics/ritarka/matcher/AdaFace/data/widerface_homework \
+    --train_data_path train \
+    --val_data_path val \
     --prefix ir101_ms1mv2_adaface \
     --use_wandb \
-    --use_mxrecord \
-    --gpus 2 \
+    --gpus 1 \
     --use_16bit \
     --arch ir_101 \
-    --batch_size 512 \
+    --batch_size 256 \
     --num_workers 16 \
     --epochs 26 \
     --lr_milestones 12,20,24 \
@@ -20,4 +19,3 @@ python main.py \
     --low_res_augmentation_prob 0.2 \
     --crop_augmentation_prob 0.2 \
     --photometric_augmentation_prob 0.2
-

@@ -57,7 +57,7 @@ class Trainer(LightningModule):
         if isinstance(scheduler, lr_scheduler._LRScheduler):
             lr = scheduler.get_last_lr()[0]
         else:
-            lr = scheduler.get_epoch_values(self.current_epoch)[0]
+            lr = scheduler.optimizer.param_groups[0]['lr']
         return lr
 
 
@@ -71,7 +71,7 @@ class Trainer(LightningModule):
 
 
     def training_step(self, batch, batch_idx):
-        images, labels = batch
+        images, labels, _, _ = batch
 
         cos_thetas, norms, embeddings, labels = self.forward(images, labels)
         loss_train = self.cross_entropy_loss(cos_thetas, labels)
@@ -115,69 +115,71 @@ class Trainer(LightningModule):
             }
 
     def validation_epoch_end(self, outputs):
-
+        # Gather outputs across devices if running in distributed mode
         all_output_tensor, all_norm_tensor, all_target_tensor, all_dataname_tensor = self.gather_outputs(outputs)
 
-        dataname_to_idx = {"agedb_30": 0, "cfp_fp": 1, "lfw": 2, "cplfw": 3, "calfw": 4}
-        idx_to_dataname = {val: key for key, val in dataname_to_idx.items()}
+        # Dictionary to hold logging metrics
         val_logs = {}
-        for dataname_idx in all_dataname_tensor.unique():
-            dataname = idx_to_dataname[dataname_idx.item()]
-            # per dataset evaluation
-            embeddings = all_output_tensor[all_dataname_tensor == dataname_idx].to('cpu').numpy()
-            labels = all_target_tensor[all_dataname_tensor == dataname_idx].to('cpu').numpy()
-            issame = labels[0::2]
-            tpr, fpr, accuracy, best_thresholds = evaluate_utils.evaluate(embeddings, issame, nrof_folds=10)
-            acc, best_threshold = accuracy.mean(), best_thresholds.mean()
 
-            num_val_samples = len(embeddings)
-            val_logs[f'{dataname}_val_acc'] = acc
-            val_logs[f'{dataname}_best_threshold'] = best_threshold
-            val_logs[f'{dataname}_num_val_samples'] = num_val_samples
+        # Process dataset outputs and calculate evaluation metrics
+        embeddings = all_output_tensor.to('cpu').numpy()
+        labels = all_target_tensor.to('cpu').numpy()
+        issame = labels[0::2]
 
-        val_logs['val_acc'] = np.mean([
-            val_logs[f'{dataname}_val_acc'] for dataname in dataname_to_idx.keys() if f'{dataname}_val_acc' in val_logs
-        ])
-        val_logs['epoch'] = self.current_epoch
+        # Evaluate embeddings
+        tpr, fpr, accuracy, best_thresholds = evaluate_utils.evaluate(embeddings, issame, nrof_folds=10)
+        acc, best_threshold = accuracy.mean(), best_thresholds.mean()
+
+        # Prepare values for logging
+        num_val_samples = torch.tensor(len(embeddings), dtype=torch.float32)
+        epoch = torch.tensor(self.current_epoch, dtype=torch.float32)
+        val_acc = torch.tensor(acc, dtype=torch.float32)
+        best_threshold = torch.tensor(best_threshold, dtype=torch.float32)
+
+        # Store values in val_logs dictionary
+        val_logs['best_threshold'] = best_threshold
+        val_logs['num_val_samples'] = num_val_samples
+        val_logs['val_acc'] = val_acc
+        val_logs['epoch'] = epoch
 
         for k, v in val_logs.items():
-            # self.log(name=k, value=v, rank_zero_only=True)
             self.log(name=k, value=v)
 
         return None
+
 
     def test_step(self, batch, batch_idx):
         return self.validation_step(batch, batch_idx)
 
     def test_epoch_end(self, outputs):
-
+        # Gather outputs across devices if running in distributed mode
         all_output_tensor, all_norm_tensor, all_target_tensor, all_dataname_tensor = self.gather_outputs(outputs)
 
-        dataname_to_idx = {"agedb_30": 0, "cfp_fp": 1, "lfw": 2, "cplfw": 3, "calfw": 4}
-        idx_to_dataname = {val: key for key, val in dataname_to_idx.items()}
-        test_logs = {}
-        for dataname_idx in all_dataname_tensor.unique():
-            dataname = idx_to_dataname[dataname_idx.item()]
-            # per dataset evaluation
-            embeddings = all_output_tensor[all_dataname_tensor == dataname_idx].to('cpu').numpy()
-            labels = all_target_tensor[all_dataname_tensor == dataname_idx].to('cpu').numpy()
-            issame = labels[0::2]
-            tpr, fpr, accuracy, best_thresholds = evaluate_utils.evaluate(embeddings, issame, nrof_folds=10)
-            acc, best_threshold = accuracy.mean(), best_thresholds.mean()
+        # Dictionary to hold logging metrics
+        val_logs = {}
 
-            num_test_samples = len(embeddings)
-            test_logs[f'{dataname}_test_acc'] = acc
-            test_logs[f'{dataname}_test_best_threshold'] = best_threshold
-            test_logs[f'{dataname}_num_test_samples'] = num_test_samples
+        # Process dataset outputs and calculate evaluation metrics
+        embeddings = all_output_tensor.to('cpu').numpy()
+        labels = all_target_tensor.to('cpu').numpy()
+        issame = labels[0::2]
 
-        test_logs['test_acc'] = np.mean([
-            test_logs[f'{dataname}_test_acc'] for dataname in dataname_to_idx.keys()
-            if f'{dataname}_test_acc' in test_logs
-        ])
-        test_logs['epoch'] = self.current_epoch
+        # Evaluate embeddings
+        tpr, fpr, accuracy, best_thresholds = evaluate_utils.evaluate(embeddings, issame, nrof_folds=10)
+        acc, best_threshold = accuracy.mean(), best_thresholds.mean()
 
-        for k, v in test_logs.items():
-            # self.log(name=k, value=v, rank_zero_only=True)
+        # Prepare values for logging
+        num_val_samples = torch.tensor(len(embeddings), dtype=torch.float32)
+        epoch = torch.tensor(self.current_epoch, dtype=torch.float32)
+        val_acc = torch.tensor(acc, dtype=torch.float32)
+        best_threshold = torch.tensor(best_threshold, dtype=torch.float32)
+
+        # Store values in val_logs dictionary
+        val_logs['best_threshold'] = best_threshold
+        val_logs['num_val_samples'] = num_val_samples
+        val_logs['val_acc'] = val_acc
+        val_logs['epoch'] = epoch
+
+        for k, v in val_logs.items():
             self.log(name=k, value=v)
 
         return None
@@ -198,6 +200,12 @@ class Trainer(LightningModule):
         all_target_tensor = torch.cat([out['target'] for out in outputs_list], axis=0).to('cpu')
         all_dataname_tensor = torch.cat([out['dataname'] for out in outputs_list], axis=0).to('cpu')
         all_image_index = torch.cat([out['image_index'] for out in outputs_list], axis=0).to('cpu')
+                
+        # print(len(all_output_tensor))
+        # print(len(all_norm_tensor))
+        # print(len(all_target_tensor))
+        # print(len(all_dataname_tensor))
+        # print(len(all_image_index))
 
         # get rid of duplicate index outputs
         unique_dict = {}

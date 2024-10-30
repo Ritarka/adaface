@@ -21,9 +21,10 @@ def get_val_pair(path, name, use_memfile=True):
         mem_file_dir = os.path.join(path, name, 'memfile')
         mem_file_name = os.path.join(mem_file_dir, 'mem_file.dat')
         if os.path.isdir(mem_file_dir):
-            print('laoding validation data memfile')
+            print('loading validation data memfile')
             np_array = read_memmap(mem_file_name)
         else:
+            print('creating validation data memfile')
             os.makedirs(mem_file_dir)
             carray = bcolz.carray(rootdir = os.path.join(path, name), mode='r')
             np_array = np.array(carray)
@@ -83,6 +84,10 @@ def calculate_roc(thresholds, embeddings1, embeddings2, actual_issame, nrof_fold
     assert (embeddings1.shape[0] == embeddings2.shape[0])
     assert (embeddings1.shape[1] == embeddings2.shape[1])
     nrof_pairs = min(len(actual_issame), embeddings1.shape[0])
+
+    # print(len(actual_issame))
+    # print(embeddings1.shape)
+
     nrof_thresholds = len(thresholds)
     k_fold = KFold(n_splits=nrof_folds, shuffle=False)
 
